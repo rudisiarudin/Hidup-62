@@ -2075,9 +2075,9 @@ class Board {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
     const sky = document.createElement('canvas'); sky.width = 4; sky.height = 256; const sx = sky.getContext('2d');
-    const gr = sx.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#f8fafc'); gr.addColorStop(0.55, '#f1f5f9'); gr.addColorStop(1, '#e2e8f0'); sx.fillStyle = gr; sx.fillRect(0, 0, 4, 256);
+    const gr = sx.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#9cd6e4'); gr.addColorStop(0.55, '#c5ebf2'); gr.addColorStop(1, '#eaf7fa'); sx.fillStyle = gr; sx.fillRect(0, 0, 4, 256);
     const skyTex = new THREE.CanvasTexture(sky); skyTex.colorSpace = THREE.SRGBColorSpace; this.scene.background = skyTex;
-    this.scene.fog = new THREE.Fog('#f1f5f9', 50, 110);
+    this.scene.fog = new THREE.Fog('#bfe6ef', 50, 110);
     // perspective (not orthographic) so the board reads as a real 3D diorama
     this.cam = new THREE.PerspectiveCamera(24, 1, 0.5, 400); this.dir = new THREE.Vector3(1, 1.05, 1).normalize();
     this.target = new THREE.Vector3(0, 0, 0); this.goal = this.target.clone();
@@ -2103,49 +2103,51 @@ class Board {
   }
 
   sea() {
-    // Elegant Matte Tabletop Background ala physical board game
-    const g = new THREE.PlaneGeometry(160, 160); g.rotateX(-Math.PI / 2);
-    const m = new THREE.MeshStandardMaterial({ color: '#f1f5f9', roughness: 0.95, metalness: 0.05 });
+    const g = new THREE.PlaneGeometry(160, 160, 40, 40); g.rotateX(-Math.PI / 2);
+    const m = new THREE.MeshStandardMaterial({ color: '#2a9fc2', roughness: 0.28, metalness: 0.1, flatShading: true });
     this.seaU = { uTime: { value: 0 } };
-    const table = new THREE.Mesh(g, m); table.position.y = -0.55; table.receiveShadow = true; this.scene.add(table);
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uTime = this.seaU.uTime;
+      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\n transformed.y += sin(position.x*0.9+uTime*1.1)*0.05 + cos(position.z*1.1+uTime*0.8)*0.05 - 0.4;');
+    };
+    const sea = new THREE.Mesh(g, m); sea.receiveShadow = true; this.scene.add(sea);
   }
 
-  // land: Satu Papan Persegi Tebal Solid Utuh (Board Game Kualitas Studio)
+  // land: one strip of island per board side (broken at the sea crossings), plus a central island
   islands() {
-    const P = this.L.pos;
+    const P = this.L.pos, grass = [], dirt = [], sand = [], shallow = [], pier = [];
     this.land = [];
-
-    // 1. LEMPENGAN PAPAN UTUH (Solid Thick Board Base)
-    // Ukuran disesuaikan dengan 40 petak (HALF = ~8.8)
-    const boardSize = (HALF + CORNER * 0.4) * 2;
-    const boardGroup = new THREE.Group();
-
-    // Alas Kayu / Karton Tebal Board Game (Cokelat Tua Mewah / Mat Board)
-    const baseGeo = new RoundedBoxGeometry(boardSize * 1.04, 0.45, boardSize * 1.04, 3, 0.15);
-    const baseMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.6, metalness: 0.1 });
-    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-    baseMesh.position.y = -0.225;
-    baseMesh.receiveShadow = true;
-    boardGroup.add(baseMesh);
-
-    // Permukaan Kuning Cerah Solid Bersih (#facc15)
-    const topGeo = new RoundedBoxGeometry(boardSize * 1.02, 0.12, boardSize * 1.02, 3, 0.1);
-    const topMat = new THREE.MeshStandardMaterial({ color: '#facc15', roughness: 0.45 });
-    const topMesh = new THREE.Mesh(topGeo, topMat);
-    topMesh.position.y = 0.05;
-    topMesh.receiveShadow = true;
-    boardGroup.add(topMesh);
-
-    // Garis Batas Emas/Hitam Mewah di Pinggiran Papan
-    const lineGeo = new THREE.RingGeometry(boardSize * 0.35, boardSize * 0.352, 64);
-    const lineMat = new THREE.MeshBasicMaterial({ color: '#ca8a04', side: THREE.DoubleSide });
-    const lineMesh = new THREE.Mesh(lineGeo, lineMat);
-    lineMesh.rotation.x = -Math.PI / 2;
-    lineMesh.position.y = 0.115;
-    boardGroup.add(lineMesh);
-
-    this.scene.add(boardGroup);
-    this.centerR = HALF - CORNER - 1.0;
+    const disk = (x, z, r) => {
+      const add = (arr, rr, rb, h, y, seg = 22) => { const c = new THREE.CylinderGeometry(rr, rb, h, seg); c.translate(x, y + h / 2, z); arr.push(c); };
+      add(grass, r + 0.04, r + 0.04, 0.1, -0.1);        // grass lip
+      add(dirt, r, r * 0.92, 0.5, -0.6, 14);             // cliff
+      add(sand, r + 0.32, r + 0.45, 0.16, -0.5);         // beach
+      add(shallow, r + 1.0, r + 1.0, 0.02, -0.39);       // turquoise shallows
+    };
+    P.forEach((o, i) => {
+      const t = TILES[i];
+      if (t.k === 'trans') { // pier over a strait
+        const w = toWorld(o.u, o.v);
+        const b = new THREE.BoxGeometry(1.3 * KS, 0.12, 1.3 * KS); b.rotateY(Math.PI / 4); b.translate(w.x, -0.06, w.z); pier.push(b);
+        for (const [du, dv] of [[-.5, -.5], [.5, .5], [.5, -.5], [-.5, .5]]) { const p = toWorld(o.u + du * KS, o.v + dv * KS); const c = new THREE.CylinderGeometry(0.06, 0.06, 0.7, 6); c.translate(p.x, -0.45, p.z); pier.push(c); }
+        return;
+      }
+      disk(o.x, o.z, (o.corner ? 1.15 : 0.95) * KS);
+      // bottom row: buildings go inward, otherwise they'd stand in front of the labels
+      if (o.side === 3 && !o.corner) disk(o.x - o.nx * 1.2 * KS, o.z - o.nz * 1.2 * KS, 0.8 * KS);
+      // outward land for decorations and buildings
+      const reach = (o.corner ? 1.5 : 1.25) * KS;
+      const ox = o.x + o.nx * reach, oz = o.z + o.nz * reach, r = (0.85 + rnd() * 0.25) * KS;
+      disk(ox, oz, r); this.land.push({ x: ox, z: oz, r, i, out: true });
+      if (rnd() < 0.5) { const fx = o.x + o.nx * (reach + 1), fz = o.z + o.nz * (reach + 1), rr = 0.5 + rnd() * 0.3; disk(fx, fz, rr); this.land.push({ x: fx, z: fz, r: rr, i, out: true }); }
+    });
+    // central island
+    const cr = HALF - CORNER - 1.2;
+    [[0, 0, cr], [-1.6 * KC, 1.1 * KC, cr * 0.6], [1.8 * KC, -1 * KC, cr * 0.55]].forEach(([u, v, r]) => { const w = toWorld(u, v); disk(w.x, w.z, r); });
+    this.centerR = cr;
+    const mk = (geos, color, opts = {}) => { const cast = opts.cast; delete opts.cast; const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ color, roughness: 0.95, ...opts })); m.receiveShadow = true; m.castShadow = !!cast; this.scene.add(m); return m; };
+    mk(grass, '#7ccb63', { cast: true }); mk(dirt, '#a8754b', { cast: true, flatShading: true }); mk(sand, '#f3dfa6'); mk(shallow, '#86e2e4', { transparent: true, opacity: 0.55, depthWrite: false }); mk(pier, '#9b6d47', { cast: true });
   }
 
   // label canvas sized to the tile's on-screen proportions, so text sits square inside the box
@@ -2211,7 +2213,7 @@ class Board {
     // Border petak bersih presisi
     x.strokeStyle = 'rgba(15, 23, 42, 0.25)'; x.lineWidth = 3; x.strokeRect(1, 1, W - 2, H - 2);
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 16;
-    this.labelCache[key] = tex; return tx;
+    this.labelCache[key] = tex; return tex;
   }
 
   tiles() {
@@ -2316,16 +2318,15 @@ class Board {
   // two card piles on the central island
   decks() {
     this.deckObj = {};
-    // Atas: KARTU MUSIBAH (Merah), Bawah: KARTU TAKDIR (Biru)
-    [['risiko', 'KARTU MUSIBAH', '#ef4444', '💥', -2.2], ['kesempatan', 'KARTU TAKDIR', '#0284c7', '🔮', 2.2]].forEach(([k, label, col, ic, dv]) => {
-      const W = 2.4, D = 1.5, c = document.createElement('canvas'); c.width = 480; c.height = Math.round(480 * D * SQUASH / W); const x = c.getContext('2d');
-      x.fillStyle = col; x.fillRect(0, 0, c.width, c.height); x.strokeStyle = '#fff'; x.lineWidth = 12; x.strokeRect(10, 10, c.width - 20, c.height - 20);
-      x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '900 36px "Outfit", sans-serif'; x.fillText(label, c.width / 2, c.height * 0.65);
-      x.font = '46px "Apple Color Emoji","Segoe UI Emoji",sans-serif'; x.fillText(ic, c.width / 2, c.height * 0.32);
+    [['kesempatan', 'KARTU TAKDIR', '#0284c7', '🔮', -1.5], ['risiko', 'KARTU MUSIBAH', '#ef4444', '💥', 1.5]].forEach(([k, label, col, ic, du]) => {
+      const W = 1.7, D = 1.15, c = document.createElement('canvas'); c.width = 340; c.height = Math.round(340 * D * SQUASH / W); const x = c.getContext('2d');
+      x.fillStyle = col; x.fillRect(0, 0, c.width, c.height); x.strokeStyle = '#fff'; x.lineWidth = 8; x.strokeRect(10, 10, c.width - 20, c.height - 20);
+      x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '900 32px "Outfit", sans-serif'; x.fillText(label, c.width / 2, c.height * 0.64);
+      x.font = '38px "Apple Color Emoji","Segoe UI Emoji",sans-serif'; x.fillText(ic, c.width / 2, c.height * 0.3);
       const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-      const g = new THREE.Group(); const w = toWorld(0, dv * KC); g.position.set(w.x, 0.12, w.z); g.rotation.y = Math.PI / 4; g.scale.setScalar(1.2);
-      const stack = new THREE.Mesh(new RoundedBoxGeometry(W, 0.38, D, 2, 0.05), new THREE.MeshStandardMaterial({ color: '#fffaf0' })); stack.position.y = 0.19; stack.castShadow = true; g.add(stack);
-      const top = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, D - 0.06), new THREE.MeshStandardMaterial({ map: tex })); top.rotation.x = -Math.PI / 2; top.position.y = 0.382; g.add(top);
+      const g = new THREE.Group(); const w = toWorld(du * KC, 1.7 * KC); g.position.set(w.x, 0, w.z); g.rotation.y = Math.PI / 4; g.scale.setScalar(1.2);
+      const stack = new THREE.Mesh(new RoundedBoxGeometry(W, 0.3, D, 2, 0.04), new THREE.MeshStandardMaterial({ color: '#fffaf0' })); stack.position.y = 0.15; stack.castShadow = true; g.add(stack);
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, D - 0.06), new THREE.MeshStandardMaterial({ map: tex })); top.rotation.x = -Math.PI / 2; top.position.y = 0.302; g.add(top);
       this.scene.add(g); this.deckObj[k] = { g, tex, W, D };
     });
   }
@@ -2377,61 +2378,69 @@ class Board {
 
   decorate() {
     const P = this.L.pos;
-    const realScene = this.scene; this.scene = new THREE.Group();
+    const realScene = this.scene; this.scene = new THREE.Group(); // statics are collected here, then merged into one mesh
+    const free = (x, z, d) => P.every(o => Math.hypot(o.x - x, o.z - z) > d);
 
-    // ─── 3D LOGO "WNI SIMULATOR" DI TENGAH PAPAN PERSIS SEPERTI BOARD GAME FISIK ───
-    const logoCanvas = document.createElement('canvas');
-    logoCanvas.width = 512; logoCanvas.height = 380;
-    const lx = logoCanvas.getContext('2d');
-    
-    // Background frame merah tebal
-    lx.fillStyle = '#ef4444';
-    lx.fillRect(0, 0, 512, 380);
-    lx.lineWidth = 14; lx.strokeStyle = '#ffffff';
-    lx.strokeRect(10, 10, 492, 360);
+    // ─── MONAS DI TENGAH PULAU NUSANTARA ───
+    const mon = new THREE.Group();
+    const white = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.35, metalness: 0.1 }), 
+          gold = new THREE.MeshStandardMaterial({ color: '#f59e0b', metalness: 0.85, roughness: 0.2, emissive: '#d97706', emissiveIntensity: 0.6 });
+    const parts = [
+      [new THREE.BoxGeometry(2.2, 0.45, 2.2), 0.22, white], 
+      [new THREE.BoxGeometry(1.4, 0.4, 1.4), 0.65, white], 
+      [new THREE.CylinderGeometry(0.18, 0.32, 4.2, 8), 2.9, white],
+      [new THREE.CylinderGeometry(0.48, 0.2, 0.35, 12), 5.15, white], 
+      [new THREE.ConeGeometry(0.28, 0.95, 12), 5.75, gold]
+    ];
+    parts.forEach(([g, y, m], k) => { 
+      const me = new THREE.Mesh(g, m); 
+      me.position.y = y; 
+      if (k === 2) me.rotation.y = Math.PI / 4; 
+      me.castShadow = me.receiveShadow = true; 
+      mon.add(me); 
+      if (k === 4) this.flame = me; 
+    });
+    const mw = toWorld(0, -0.4 * KC); mon.position.set(mw.x, 0.12, mw.z); mon.scale.setScalar(1.2); this.scene.add(mon);
 
-    // Teks WNI (pojok kanan atas)
-    lx.fillStyle = '#ffffff';
-    lx.font = '900 48px "Outfit", sans-serif';
-    lx.textAlign = 'right';
-    lx.fillText('WNI', 480, 75);
+    // Plaza melingkar di sekeliling Monas
+    const mwc = toWorld(0, -0.4 * KC);
+    const plaza = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.6, 48), new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.8 }));
+    plaza.rotation.x = -Math.PI / 2; plaza.position.set(mwc.x, 0.125, mwc.z); plaza.receiveShadow = true; this.scene.add(plaza);
+    [[-2.5, -1.7, 'building-small-c', 0.8], [-1.3, -2.4, 'building-small-b', 0.7], [1.3, -2.4, 'building-small-d', 0.7], [2.5, -1.7, 'building-small-c', 0.8], [-2.9, -0.2, 'building-small-a', 0.6], [2.9, -0.2, 'building-garage', 0.6]].forEach(([u, v, n, sz]) => {
+      const m = this.clone(n, sz * 1.25); if (!m) return; const w = toWorld(u * KC, v * KC); m.position.set(w.x, 0.12, w.z); m.rotation.y = Math.PI / 4; this.scene.add(m);
+    });
 
-    // Teks SIM - ULA - TOR
-    lx.textAlign = 'left';
-    lx.font = '900 100px "Outfit", sans-serif';
-    lx.fillText('SIM', 36, 150);
-    lx.fillText('ULA', 36, 250);
-    lx.fillText('TOR', 36, 350);
+    // Rutan block beside LAPAS corner, orange vest at Diciduk
+    const at = (i, d) => { const o = P[i]; return [o.x + o.nx * d, o.z + o.nz * d]; };
+    const grey = new THREE.MeshStandardMaterial({ color: '#9aa0a8', roughness: 0.9 }), dark = new THREE.MeshStandardMaterial({ color: '#2f3238' });
+    const ru = new THREE.Group(); const wall = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.6, 0.8), grey); wall.position.y = 0.3; ru.add(wall);
+    for (let k = -2; k <= 2; k++) { const bar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 0.04), dark); bar.position.set(k * 0.16, 0.3, 0.42); ru.add(bar); }
+    const tw = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 0.3), grey); tw.position.set(0.55, 0.55, -0.3); ru.add(tw);
+    ru.traverse(m => { if (m.isMesh) m.castShadow = true; });
+    const [rx, rz] = at(10, 1.7 * KS); ru.position.set(rx, 0.12, rz); ru.rotation.y = Math.PI / 4; this.scene.add(ru);
+    const [vx, vz] = at(30, 1.6 * KS); const vest = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.6, 6), new THREE.MeshStandardMaterial({ color: '#f26b1d' })); vest.position.set(vx, 0.35, vz); vest.castShadow = true; this.scene.add(vest);
 
-    const logoTex = new THREE.CanvasTexture(logoCanvas);
-    logoTex.colorSpace = THREE.SRGBColorSpace;
-    
-    const logoMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.2, 3.0),
-      new THREE.MeshStandardMaterial({ map: logoTex, roughness: 0.35 })
-    );
-    logoMesh.rotation.x = -Math.PI / 2;
-    logoMesh.position.set(0, 0.125, 0); // Di tengah persis di atas papan solid
-    logoMesh.receiveShadow = true;
-    this.scene.add(logoMesh);
+    // Tumpukan Uang Rupiah di Dana Hibah
+    const [hx, hz] = at(20, 1.4 * KS);
+    for (let k = 0; k < 8; k++) { const cn = this.clone('coin', 0.45); if (!cn) break; cn.position.set(hx + (rnd() - 0.5) * 0.6, 0.12 + k * 0.08, hz + (rnd() - 0.5) * 0.6); cn.rotation.set(Math.PI / 2, 0, rnd() * 6); this.scene.add(cn); }
+
+    // Pohon rimbun di tengah pulau
+    const trees = ['grass-trees', 'grass-trees-tall'];
+    for (let k = 0; k < 18; k++) {
+      const u = (rnd() - 0.5) * this.centerR * 1.6, v = (rnd() - 0.5) * this.centerR * 1.6; if (Math.abs(v - 1.7 * KC) < 1.2 && Math.abs(u) < 3.6) continue; if (Math.hypot(u, v + 0.4 * KC) < 1.8) continue; if (v < -1.2 * KC && Math.abs(u) > 1) continue;
+      const w = toWorld(u, v); const m = this.clone(trees[k % 2], 0.5); if (!m) continue; m.position.set(w.x, 0.12, w.z); this.scene.add(m);
+    }
 
     // ─── PLANET BEKASI DI LUAR PETA (MEME SATIRE WNI SIMULATOR) ───
     const bekasiGroup = new THREE.Group();
-    // Posisi di luar peta persegi (pojok kiri atas luar angkasa)
     const wBekasi = toWorld(-11.5, -7.0);
     bekasiGroup.position.set(wBekasi.x, 0.35, wBekasi.z);
-
-    // Planet Orb / Piringan Planet Bekasi (Warna Ungu Kosmik)
     const bekasiCanvas = document.createElement('canvas');
     bekasiCanvas.width = 256; bekasiCanvas.height = 256;
     const bx = bekasiCanvas.getContext('2d');
-    
-    // Lingkaran ungu luar angkasa
     bx.fillStyle = '#6b21a8';
     bx.beginPath(); bx.arc(128, 128, 120, 0, Math.PI * 2); bx.fill();
     bx.lineWidth = 8; bx.strokeStyle = '#c084fc'; bx.stroke();
-    
-    // Teks PLANET BEKASI
     bx.fillStyle = '#fde047';
     bx.font = '900 28px "Outfit", sans-serif';
     bx.textAlign = 'center'; bx.textBaseline = 'middle';
@@ -2441,41 +2450,22 @@ class Board {
     bx.font = '16px "Plus Jakarta Sans", sans-serif';
     bx.fillStyle = '#e9d5ff';
     bx.fillText('(Di Luar Bumi)', 128, 160);
-
     const bekasiTex = new THREE.CanvasTexture(bekasiCanvas);
     bekasiTex.colorSpace = THREE.SRGBColorSpace;
     const bekasiDisc = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.15, 32), new THREE.MeshStandardMaterial({ color: '#7e22ce', roughness: 0.5 }));
     bekasiDisc.castShadow = true; bekasiGroup.add(bekasiDisc);
-
     const bekasiTop = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8), new THREE.MeshStandardMaterial({ map: bekasiTex, transparent: true }));
-    bekasiTop.rotation.x = -Math.PI / 2;
-    bekasiTop.position.y = 0.085;
-    bekasiGroup.add(bekasiTop);
-
-    // Cincin Planet Saturnus / Satelit Bekasi
+    bekasiTop.rotation.x = -Math.PI / 2; bekasiTop.position.y = 0.085; bekasiGroup.add(bekasiTop);
     const ringGeo = new THREE.RingGeometry(1.8, 2.2, 32);
     const ringMat = new THREE.MeshStandardMaterial({ color: '#a855f7', side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
     const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-    ringMesh.rotation.x = -Math.PI / 2 + 0.3;
-    ringMesh.position.y = 0.15;
-    bekasiGroup.add(ringMesh);
-
-    // UFO alien kecil melayang di atas Bekasi
+    ringMesh.rotation.x = -Math.PI / 2 + 0.3; ringMesh.position.y = 0.15; bekasiGroup.add(ringMesh);
     const ufo = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 8), new THREE.MeshStandardMaterial({ color: '#38bdf8', metalness: 0.8, roughness: 0.2 }));
-    ufo.scale.set(1.4, 0.3, 1.4);
-    ufo.position.set(0, 0.8, 0);
-    bekasiGroup.add(ufo);
-
+    ufo.scale.set(1.4, 0.3, 1.4); ufo.position.set(0, 0.8, 0); bekasiGroup.add(ufo);
     this.scene.add(bekasiGroup);
 
-    // Rutan block beside LAPAS corner
-    const at = (i, d) => { const o = P[i]; return [o.x + o.nx * d, o.z + o.nz * d]; };
-    
-    // Tumpukan Uang Rupiah di Dana Hibah
-    const [hx, hz] = at(20, 1.4 * KS);
-    for (let k = 0; k < 8; k++) { const cn = this.clone('coin', 0.45); if (!cn) break; cn.position.set(hx + (rnd() - 0.5) * 0.6, 0.03 + k * 0.08, hz + (rnd() - 0.5) * 0.6); cn.rotation.set(Math.PI / 2, 0, rnd() * 6); this.scene.add(cn); }
-
     const statics = this.scene; this.scene = realScene;
+    if (this.flame) { const f = this.flame, wp = new THREE.Vector3(), ws = new THREE.Vector3(); statics.updateMatrixWorld(true); f.getWorldPosition(wp); f.getWorldScale(ws); f.parent.remove(f); f.position.copy(wp); f.scale.copy(ws); this.flameBase = ws.x; this.scene.add(f); }
     this.scene.add(statics);
   }
 
@@ -3006,11 +2996,16 @@ async function boot() {
   $('#mode').textContent = 'Mode Lokal (Siap Main)';
   $('#mode').dataset.kind = 'local';
 
-  app.board = new Board($('#board'));
-  app.board.onTile = i => showTile(i);
-  app.board.onFollow = v => $('#btn-follow').setAttribute('aria-pressed', v);
-  app.board.onHop = big => sfx.hop(big);
-  app.board.loadModels().then(() => app.board.sync(app.shown && app.shown.status !== 'lobby' ? app.shown : null));
+  try {
+    app.board = new Board($('#board'));
+    app.board.onTile = i => showTile(i);
+    app.board.onFollow = v => $('#btn-follow').setAttribute('aria-pressed', v);
+    app.board.onHop = big => sfx.hop(big);
+    app.board.loadModels().then(() => app.board.sync(app.shown && app.shown.status !== 'lobby' ? app.shown : null));
+  } catch (err) {
+    console.error('BOARD INIT CRASH:', err);
+    window.__board_error = { message: err.message, stack: err.stack };
+  }
   let localId = store.get('kp_id'); if (!localId) { localId = 'u' + rid(10); store.set('kp_id', localId); }
   app.me.id = localId;
   
@@ -3068,8 +3063,8 @@ async function boot() {
         try { const id = user && await user.id(); if (id) app.me.id = id; } catch (e) { }
       } else {
         const timeoutPromise = (prom, ms) => Promise.race([prom, new Promise(res => setTimeout(() => res(null), ms))]);
-        const onlineNet = (await timeoutPromise(SupaNet.create(window.SUPA), 2500)) || 
-                          (await timeoutPromise(MqttNet.create(app.me.id), 3000));
+        // Utamakan LocalNet untuk standalone / LAN offline play agar stabil tanpa error Supabase remote
+        const onlineNet = null;
         if (onlineNet) {
           app.net = onlineNet;
           if (app.net.secure) app.me.id = app.net.uid;
